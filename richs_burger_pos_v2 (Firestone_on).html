@@ -285,6 +285,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-body);min-hei
       <div style="font-family:var(--font-display);font-size:20px;letter-spacing:1px;" id="mes-titulo"></div>
       <button onclick="exportMonth()" style="padding:7px 12px;border-radius:8px;border:none;background:var(--accent);color:white;font-family:var(--font-body);font-size:12px;font-weight:700;cursor:pointer;">⬇ Reporte mes</button>
     </div>
+    <div class="day-selector" id="month-selector"></div>
     <div class="day-stats" id="month-stats"></div>
     <p class="section-title">Resumen por día operativo</p>
     <div id="month-day-list"></div>
@@ -732,6 +733,7 @@ function reprintOrder(id){
 let selectedDay = today;
 let ventasTab   = 'dia';
 let reportScope = 'dia';
+let selectedMonth = null; // 'YYYY-MM', mes elegido en la pestaña Mes
 
 function switchVentasTab(tab) {
   ventasTab = tab;
@@ -743,8 +745,24 @@ function switchVentasTab(tab) {
 
 const monthKey     = d  => { const dt=new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}`; };
 const currentMK    = () => monthKey(today);
-const monthOrders  = () => allOrders.filter(o=>monthKey(o.date)===currentMK());
+const monthOrders  = (mk) => { mk = mk || currentMK(); return allOrders.filter(o=>monthKey(o.date)===mk); };
 const ordersForDay = d  => allOrders.filter(o=>o.date===d);
+
+// Todos los meses con órdenes registradas, más el mes actual, del más reciente al más antiguo
+function allMonths(){
+  const keys=new Set(allOrders.map(o=>monthKey(o.date)));
+  keys.add(currentMK());
+  return [...keys].sort().reverse();
+}
+function monthLabel(mk){
+  const [yr,mo]=mk.split('-');
+  return new Date(yr,mo-1,1).toLocaleDateString('es-CO',{month:'long',year:'numeric'});
+}
+function monthLabelShort(mk){
+  const [yr,mo]=mk.split('-');
+  return new Date(yr,mo-1,1).toLocaleDateString('es-CO',{month:'short',year:'2-digit'});
+}
+function selectMonth(mk){ selectedMonth=mk; renderMonthView(); }
 
 function monthDays(){
   const days=[...new Set(monthOrders().map(o=>o.date))].sort();
@@ -815,17 +833,24 @@ function renderVentas(){
 function selectDay(d){ selectedDay=d; renderVentas(); }
 
 function renderMonthView(){
-  const mOrders=monthOrders();
+  if(!selectedMonth) selectedMonth=currentMK();
+
+  const months=allMonths();
+  document.getElementById('month-selector').innerHTML=months.map(mk=>{
+    const isSel=mk===selectedMonth;
+    return `<div class="day-pill ${isSel?'active':'has-data'}" onclick="selectMonth('${mk}')">${monthLabelShort(mk)}</div>`;
+  }).join('');
+
+  const mk=selectedMonth;
+  const mOrders=monthOrders(mk);
   const mRev   =mOrders.reduce((s,o)=>s+o.total,0);
   const mCost  =mOrders.reduce((s,o)=>s+o.costTotal,0);
   const mGross =mRev-mCost;
-  const daysOp =monthDays().filter(d=>ordersForDay(d).length>0).length;
+  const daysInMonth=[...new Set(mOrders.map(o=>o.date))];
+  const daysOp =daysInMonth.filter(d=>ordersForDay(d).length>0).length;
   const mNet   =mGross-FIXED_MONTHLY;
   const mOrds  =mOrders.length;
-  const mk=currentMK();
-  const [yr,mo]=mk.split('-');
-  const monthName=new Date(yr,mo-1,1).toLocaleDateString('es-CO',{month:'long',year:'numeric'});
-  document.getElementById('mes-titulo').textContent=monthName.toUpperCase();
+  document.getElementById('mes-titulo').textContent=monthLabel(mk).toUpperCase();
 
   document.getElementById('month-stats').innerHTML=`
     <div class="stat-card"><div class="stat-label">Días operando</div><div class="stat-val">${daysOp}</div><div class="stat-sub">este mes</div></div>
@@ -838,7 +863,7 @@ function renderMonthView(){
       <div class="stat-val" style="color:${mNet>=0?'var(--green)':'var(--red)'};font-size:15px;">${fmt(mNet)}</div>
     </div>`;
 
-  const days=monthDays().filter(d=>ordersForDay(d).length>0);
+  const days=daysInMonth.filter(d=>ordersForDay(d).length>0).sort();
   const maxRev=Math.max(...days.map(d=>ordersForDay(d).reduce((s,o)=>s+o.total,0)),1);
   document.getElementById('month-day-list').innerHTML=days.length?days.map(d=>{
     const ords=ordersForDay(d);
@@ -866,14 +891,14 @@ function exportDay(){
 }
 
 function exportMonth(){
-  const mOrders=monthOrders();
+  const mk=selectedMonth||currentMK();
+  const mOrders=monthOrders(mk);
   if(!mOrders.length){toast('Sin ventas este mes','var(--red)');return;}
-  const mk=currentMK();
   let csv='=== REPORTE MENSUAL RICH\'S BURGER ===\n';
   csv+=`Mes: ${mk}\nGenerado: ${new Date().toLocaleString('es-CO')}\nGastos fijos: ${FIXED_MONTHLY}\n\n`;
   csv+='--- RESUMEN POR DÍA ---\n';
   csv+='Fecha,Día,Órdenes,Ingreso COP,Costo COP,Ganancia bruta,Combos,Promos jueves\n';
-  const days=monthDays().filter(d=>ordersForDay(d).length>0);
+  const days=[...new Set(mOrders.map(o=>o.date))].filter(d=>ordersForDay(d).length>0).sort();
   days.forEach(d=>{
     const ords=ordersForDay(d);
     const rev=ords.reduce((s,o)=>s+o.total,0);
@@ -1222,3 +1247,4 @@ initFirebase();
 </script>
 </body>
 </html>
+// "Agregar selector de meses"
